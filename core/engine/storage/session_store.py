@@ -176,7 +176,23 @@ class SessionStore:
         return True
 
     def write_state_sync(self, session_id: str, state: SessionState) -> None:
-        """Synchronous wrapper around async write_state."""
-        import asyncio
+    """Write session state synchronously – offloaded to a thread if inside an event loop."""
+    import asyncio
+    import concurrent.futures
 
+    # Check if we're inside a running event loop
+    try:
+        loop = asyncio.get_running_loop()
+        in_loop = True
+    except RuntimeError:
+        loop = None
+        in_loop = False
+
+    if in_loop:
+        # We're inside an event loop – offload to a thread to avoid blocking
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(asyncio.run, self.write_state(session_id, state))
+            future.result()  # wait for completion, but in a separate thread
+    else:
+        # No event loop running – safe to use asyncio.run directly
         asyncio.run(self.write_state(session_id, state))
